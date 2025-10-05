@@ -13,10 +13,29 @@ import sys
 from typing import List
 from openai import OpenAI
 from memory import MemoryStore, Turn
+import re
 
 MODEL = "gpt-4o-mini"
 RECENT_K = 6           # include last K turns
 KEYWORD_LIMIT = 4      # include up to 4 keyword hits
+
+def extract_keywords(text: str, min_len=4, max_len=15, limit=5):
+    """
+    Auto-detects likely keywords (e.g., 'OANDA', 'trading', 'memory').
+    Filters common stopwords and very short words.
+    """
+    text = re.sub(r"[^A-Za-z0-9\s]", " ", text)
+    words = text.split()
+    stop = {"this", "that", "what", "about", "hello", "there", "have", "with", "from", "your", "today"}
+    # keep capitalized or uncommon words
+    candidates = [w for w in words if min_len <= len(w) <= max_len and w.lower() not in stop]
+    # remove duplicates, keep first N
+    seen = []
+    for w in candidates:
+        wl = w.lower()
+        if wl not in seen:
+            seen.append(wl)
+    return seen[:limit]
 
 def format_memory_block(recent: List[Turn], keywords: List[Turn]) -> str:
     def fmt(ts: str, role: str, text: str) -> str:
@@ -59,6 +78,11 @@ def main():
     agent_text = resp.choices[0].message.content.strip()
 
     print("Agent:", agent_text)
+
+    auto_tags = extract_keywords(user_input)
+    if auto_tags:
+        for tag in auto_tags:
+            mem.add_interaction(f"#auto_tag {tag}", "(auto-tag)")  # optional marker
 
     # Save to memory
     mem.add_interaction(user_input, agent_text)
